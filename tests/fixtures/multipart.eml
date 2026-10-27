@@ -1,0 +1,22 @@
+From: Microsoft <no-reply@micros0ft-support.com>
+To: victim@example.com
+Subject: Password expires today
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="BOUNDARY"
+
+--BOUNDARY
+Content-Type: text/plain; charset="utf-8"
+
+Your monthly newsletter is ready.
+
+--BOUNDARY
+Content-Type: text/html; charset="utf-8"
+
+<html>
+<body>
+<p>Your password expires today.</p>
+<p><a href="http://micros0ft-support.com/reset">Keep current password</a></p>
+</body>
+</html>
+
+--BOUNDARY--

@@ -1,0 +1,29 @@
+From: Billing <billing@invoices-online.net>
+To: victim@example.com
+Subject: Invoice #4471 overdue
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="OUTER"
+
+--OUTER
+Content-Type: multipart/alternative; boundary="INNER"
+
+--INNER
+Content-Type: text/plain; charset="utf-8"
+
+Please see the attached invoice.
+
+--INNER
+Content-Type: text/html; charset="utf-8"
+
+<p>Please see the attached invoice or <a href="http://invoices-online.net/pay">pay online</a>.</p>
+
+--INNER--
+
+--OUTER
+Content-Type: application/pdf; name="invoice.pdf.exe"
+Content-Disposition: attachment; filename="invoice.pdf.exe"
+Content-Transfer-Encoding: base64
+
+TVqQAAMAAAAEAAAA
+
+--OUTER--
