@@ -42,6 +42,8 @@ BRANDS = {
     "linkedin": ["linkedin.com"],
 }
 
+LOOKALIKES = [("rn", "m"), ("vv", "w"), ("0", "o"), ("1", "l")]
+
 
 class Severity(IntEnum):
     LOW = 1
@@ -101,6 +103,45 @@ def check_brand_impersonation(email: ParsedEmail) -> list[Finding]:
     return findings
 
 
+def check_lookalike_domain(email: ParsedEmail) -> list[Finding]:
+    domains = [_email_domain(email.sender), _email_domain(email.reply_to)]
+    domains += [_host(link.url) for link in email.links]
+
+    findings = []
+    # dedupe but keep the order
+    for domain in dict.fromkeys(domains):
+        if not domain or _is_official(domain):
+            continue
+        if any(label.startswith("xn--") for label in domain.split(".")):
+            detail = f"{domain} uses punycode which can hide lookalike letters"
+            findings.append(Finding("lookalike_domain", Severity.HIGH, detail))
+            continue
+        brand = _hidden_brand(domain)
+        if brand:
+            detail = f"{domain} looks like {brand}"
+            findings.append(Finding("lookalike_domain", Severity.HIGH, detail))
+    return findings
+
+
+def _hidden_brand(domain: str) -> str:
+    unmasked = domain
+    for fake, real in LOOKALIKES:
+        unmasked = unmasked.replace(fake, real)
+    # only counts if swapping the fake letters is what reveals the brand
+    for brand in BRANDS:
+        if brand in unmasked and brand not in domain:
+            return brand
+    return ""
+
+
+def _is_official(domain: str) -> bool:
+    return any(
+        _is_within(domain, official)
+        for officials in BRANDS.values()
+        for official in officials
+    )
+
+
 def _email_domain(address: str) -> str:
     _, addr = parseaddr(address)
     if "@" not in addr:
@@ -129,7 +170,12 @@ def _host(url: str) -> str:
     return host.removeprefix("www.")
 
 
-RULES = [check_link_mismatch, check_reply_to_mismatch, check_brand_impersonation]
+RULES = [
+    check_link_mismatch,
+    check_reply_to_mismatch,
+    check_brand_impersonation,
+    check_lookalike_domain,
+]
 
 
 def run_all_rules(email: ParsedEmail) -> list[Finding]:

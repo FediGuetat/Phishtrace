@@ -6,6 +6,7 @@ from phishtrace.rules import (
     Severity,
     check_brand_impersonation,
     check_link_mismatch,
+    check_lookalike_domain,
     check_reply_to_mismatch,
     run_all_rules,
 )
@@ -172,3 +173,44 @@ def test_no_display_name_is_skipped():
     email = _email_from("paypal@evil.ru")
 
     assert check_brand_impersonation(email) == []
+
+
+def test_digit_swapped_domain_is_flagged_once():
+    email = parse_email((FIXTURES / "simple.eml").read_bytes())
+
+    detail = "paypa1-security.com looks like paypal"
+    assert check_lookalike_domain(email) == [
+        Finding("lookalike_domain", Severity.HIGH, detail)
+    ]
+
+
+def test_zero_for_o_is_flagged():
+    email = parse_email((FIXTURES / "multipart.eml").read_bytes())
+
+    detail = check_lookalike_domain(email)[0].detail
+    assert detail == "micros0ft-support.com looks like microsoft"
+
+
+def test_rn_for_m_is_flagged():
+    email = _email_from("Support <help@rnicrosoft.com>")
+
+    assert len(check_lookalike_domain(email)) == 1
+
+
+def test_punycode_link_is_flagged():
+    email = _email_with_link("Login", "https://xn--pypal-4ve.com/login")
+
+    detail = check_lookalike_domain(email)[0].detail
+    assert detail == "xn--pypal-4ve.com uses punycode which can hide lookalike letters"
+
+
+def test_official_domain_with_digits_is_fine():
+    email = _email_from("Amazon <ship@web1.amazon.com>")
+
+    assert check_lookalike_domain(email) == []
+
+
+def test_normal_domain_with_rn_is_fine():
+    email = _email_from("News <news@learnmore.com>")
+
+    assert check_lookalike_domain(email) == []
