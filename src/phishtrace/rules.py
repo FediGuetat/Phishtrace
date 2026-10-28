@@ -1,3 +1,4 @@
+import ipaddress
 import re
 from dataclasses import dataclass
 from email.utils import parseaddr
@@ -43,6 +44,20 @@ BRANDS = {
 }
 
 LOOKALIKES = [("rn", "m"), ("vv", "w"), ("0", "o"), ("1", "l")]
+
+SHORTENERS = {
+    "bit.ly",
+    "tinyurl.com",
+    "t.co",
+    "goo.gl",
+    "ow.ly",
+    "is.gd",
+    "buff.ly",
+    "rebrand.ly",
+    "cutt.ly",
+    "shorturl.at",
+    "tiny.cc",
+}
 
 
 class Severity(IntEnum):
@@ -123,6 +138,46 @@ def check_lookalike_domain(email: ParsedEmail) -> list[Finding]:
     return findings
 
 
+def check_suspicious_urls(email: ParsedEmail) -> list[Finding]:
+    findings = []
+    for url in dict.fromkeys(link.url for link in email.links):
+        findings.extend(check_url(url))
+    return findings
+
+
+def check_url(url: str) -> list[Finding]:
+    try:
+        parts = urlparse(url)
+        host = parts.hostname or ""
+    except ValueError:
+        return []
+    if parts.scheme not in ("http", "https") or not host:
+        return []
+    host = host.removeprefix("www.")
+
+    findings = []
+    # browsers ignore everything before the @ so paypal.com@evil.ru goes to evil.ru
+    if "@" in parts.netloc:
+        detail = f"link hides its real host {host} behind an @"
+        findings.append(Finding("suspicious_url", Severity.HIGH, detail))
+    if _is_ip(host):
+        detail = f"link goes to a raw ip address {host}"
+        findings.append(Finding("suspicious_url", Severity.HIGH, detail))
+    if host in SHORTENERS:
+        detail = f"link uses the shortener {host} so the real target is hidden"
+        findings.append(Finding("suspicious_url", Severity.MEDIUM, detail))
+    return findings
+
+
+def _is_ip(host: str) -> bool:
+    # http://3232235777 is an ip written as one number and browsers still open it
+    try:
+        ipaddress.ip_address(int(host) if host.isdigit() else host)
+    except ValueError:
+        return False
+    return True
+
+
 def _hidden_brand(domain: str) -> str:
     unmasked = domain
     for fake, real in LOOKALIKES:
@@ -175,6 +230,7 @@ RULES = [
     check_reply_to_mismatch,
     check_brand_impersonation,
     check_lookalike_domain,
+    check_suspicious_urls,
 ]
 
 

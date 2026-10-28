@@ -8,6 +8,8 @@ from phishtrace.rules import (
     check_link_mismatch,
     check_lookalike_domain,
     check_reply_to_mismatch,
+    check_suspicious_urls,
+    check_url,
     run_all_rules,
 )
 
@@ -214,3 +216,47 @@ def test_normal_domain_with_rn_is_fine():
     email = _email_from("News <news@learnmore.com>")
 
     assert check_lookalike_domain(email) == []
+
+
+def test_at_sign_in_url_is_flagged():
+    detail = "link hides its real host evil.ru behind an @"
+    assert check_url("http://paypal.com@evil.ru/login") == [
+        Finding("suspicious_url", Severity.HIGH, detail)
+    ]
+
+
+def test_raw_ip_is_flagged():
+    detail = check_url("http://185.22.1.4/login")[0].detail
+
+    assert detail == "link goes to a raw ip address 185.22.1.4"
+
+
+def test_ip_written_as_one_number_is_flagged():
+    assert len(check_url("http://3232235777/login")) == 1
+
+
+def test_shortener_is_medium():
+    findings = check_url("https://www.bit.ly/abc123")
+
+    assert [f.severity for f in findings] == [Severity.MEDIUM]
+
+
+def test_normal_url_is_fine():
+    assert check_url("https://example.com/page") == []
+
+
+def test_non_web_links_are_skipped():
+    assert check_url("mailto:someone@example.com") == []
+
+
+def test_broken_url_does_not_crash():
+    assert check_url("http://[abc") == []
+
+
+def test_same_url_twice_is_reported_once():
+    raw = (
+        b"Content-Type: text/html\n\n"
+        b'<a href="http://185.22.1.4">a</a><a href="http://185.22.1.4">b</a>'
+    )
+
+    assert len(check_suspicious_urls(parse_email(raw))) == 1
