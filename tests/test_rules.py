@@ -4,6 +4,7 @@ from phishtrace.parser import parse_email
 from phishtrace.rules import (
     Finding,
     Severity,
+    check_brand_impersonation,
     check_link_mismatch,
     check_reply_to_mismatch,
     run_all_rules,
@@ -122,3 +123,52 @@ def test_reply_to_without_address_is_skipped():
     email = _email_with_headers("a@shop.com", "not an address")
 
     assert check_reply_to_mismatch(email) == []
+
+
+def _email_from(sender):
+    return parse_email(f"From: {sender}\n\nHi".encode())
+
+
+def test_brand_from_wrong_domain_is_flagged():
+    email = parse_email((FIXTURES / "simple.eml").read_bytes())
+
+    detail = "display name says paypal but mail comes from paypa1-security.com"
+    assert check_brand_impersonation(email) == [
+        Finding("brand_impersonation", Severity.HIGH, detail)
+    ]
+
+
+def test_brand_from_real_subdomain_is_fine():
+    email = _email_from("Microsoft <noreply@accountprotection.microsoft.com>")
+
+    assert check_brand_impersonation(email) == []
+
+
+def test_brand_from_other_official_domain_is_fine():
+    email = _email_from("Facebook <notification@facebookmail.com>")
+
+    assert check_brand_impersonation(email) == []
+
+
+def test_brand_from_free_mail_is_flagged():
+    email = _email_from("Google Security <google.alerts@gmail.com>")
+
+    assert len(check_brand_impersonation(email)) == 1
+
+
+def test_brand_match_ignores_case():
+    email = _email_from("PAYPAL <x@evil.ru>")
+
+    assert len(check_brand_impersonation(email)) == 1
+
+
+def test_brand_inside_other_word_is_ignored():
+    email = _email_from("Metadata Team <team@example.com>")
+
+    assert check_brand_impersonation(email) == []
+
+
+def test_no_display_name_is_skipped():
+    email = _email_from("paypal@evil.ru")
+
+    assert check_brand_impersonation(email) == []
