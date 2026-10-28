@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from email.utils import parseaddr
 from enum import IntEnum
 from urllib.parse import urlparse
 
@@ -41,6 +42,29 @@ def check_link_mismatch(email: ParsedEmail) -> list[Finding]:
     return findings
 
 
+def check_reply_to_mismatch(email: ParsedEmail) -> list[Finding]:
+    sender = _email_domain(email.sender)
+    reply_to = _email_domain(email.reply_to)
+    if not sender or not reply_to:
+        return []
+    if _same_org(sender, reply_to):
+        return []
+    detail = f"replies go to {reply_to} instead of {sender}"
+    return [Finding("reply_to_mismatch", Severity.MEDIUM, detail)]
+
+
+def _email_domain(address: str) -> str:
+    _, addr = parseaddr(address)
+    if "@" not in addr:
+        return ""
+    return addr.rpartition("@")[2].lower()
+
+
+def _same_org(a: str, b: str) -> bool:
+    # mail.company.com replying to company.com is still the same org
+    return a == b or a.endswith("." + b) or b.endswith("." + a)
+
+
 def _host(url: str) -> str:
     # urlparse needs a scheme or it treats the whole thing as a path
     if "://" not in url:
@@ -52,7 +76,7 @@ def _host(url: str) -> str:
     return host.removeprefix("www.")
 
 
-RULES = [check_link_mismatch]
+RULES = [check_link_mismatch, check_reply_to_mismatch]
 
 
 def run_all_rules(email: ParsedEmail) -> list[Finding]:
