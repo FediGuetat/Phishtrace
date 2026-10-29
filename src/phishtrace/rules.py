@@ -110,6 +110,15 @@ class Finding:
     detail: str
 
 
+# none neutral and temperror arent here they say nothing about the sender
+AUTH_FAILURES = {
+    ("dmarc", "fail"): Severity.HIGH,
+    ("spf", "fail"): Severity.MEDIUM,
+    ("dkim", "fail"): Severity.MEDIUM,
+    ("spf", "softfail"): Severity.LOW,
+}
+
+
 def check_link_mismatch(email: ParsedEmail) -> list[Finding]:
     findings = []
     for link in email.links:
@@ -259,6 +268,27 @@ def check_attachment(filename: str, content_type: str) -> Finding | None:
     return None
 
 
+def check_auth_failure(email: ParsedEmail) -> list[Finding]:
+    results = {
+        "spf": email.auth.spf,
+        "dkim": email.auth.dkim,
+        "dmarc": email.auth.dmarc,
+    }
+    failed = []
+    severities = []
+    for method, value in results.items():
+        severity = AUTH_FAILURES.get((method, value))
+        if severity:
+            failed.append(f"{method}={value}")
+            severities.append(severity)
+    if not failed:
+        return []
+
+    # a fake sender usually fails all three so report it once
+    detail = f"sender checks failed: {', '.join(failed)}"
+    return [Finding("auth_failure", max(severities), detail)]
+
+
 def _is_ip(host: str) -> bool:
     # http://3232235777 is an ip written as one number and browsers still open it
     try:
@@ -323,6 +353,7 @@ RULES = [
     check_suspicious_urls,
     check_urgency_language,
     check_dangerous_attachments,
+    check_auth_failure,
 ]
 
 

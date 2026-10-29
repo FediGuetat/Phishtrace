@@ -5,6 +5,7 @@ from phishtrace.rules import (
     Finding,
     Severity,
     check_attachment,
+    check_auth_failure,
     check_brand_impersonation,
     check_dangerous_attachments,
     check_link_mismatch,
@@ -392,3 +393,63 @@ def test_no_attachments_is_fine():
     email = _email_saying("Hi")
 
     assert check_dangerous_attachments(email) == []
+
+
+def _email_with_auth(results):
+    raw = f"Authentication-Results: mx.example.com; {results}\n\nHi"
+    return parse_email(raw.encode())
+
+
+def test_all_checks_passing_is_fine():
+    email = _email_with_auth("spf=pass dkim=pass dmarc=pass")
+
+    assert check_auth_failure(email) == []
+
+
+def test_missing_header_is_fine():
+    email = _email_saying("Hi")
+
+    assert check_auth_failure(email) == []
+
+
+def test_dmarc_fail_is_high():
+    email = _email_with_auth("spf=pass dkim=none dmarc=fail")
+
+    detail = "sender checks failed: dmarc=fail"
+    assert check_auth_failure(email) == [Finding("auth_failure", Severity.HIGH, detail)]
+
+
+def test_spf_fail_is_medium():
+    email = _email_with_auth("spf=fail")
+
+    findings = check_auth_failure(email)
+    assert [f.severity for f in findings] == [Severity.MEDIUM]
+
+
+def test_spf_softfail_is_low():
+    email = _email_with_auth("spf=softfail")
+
+    findings = check_auth_failure(email)
+    assert [f.severity for f in findings] == [Severity.LOW]
+
+
+def test_several_failures_give_one_finding_at_highest_level():
+    email = _email_with_auth("spf=softfail dkim=fail")
+
+    detail = "sender checks failed: spf=softfail, dkim=fail"
+    assert check_auth_failure(email) == [
+        Finding("auth_failure", Severity.MEDIUM, detail)
+    ]
+
+
+def test_temporary_dns_error_is_fine():
+    email = _email_with_auth("spf=temperror")
+
+    assert check_auth_failure(email) == []
+
+
+def test_upper_case_result_is_found():
+    email = _email_with_auth("DMARC=FAIL")
+
+    findings = check_auth_failure(email)
+    assert [f.severity for f in findings] == [Severity.HIGH]
