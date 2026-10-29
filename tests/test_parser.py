@@ -111,7 +111,9 @@ def test_attachment_does_not_break_body_or_links():
     parsed = parse_email((FIXTURES / "attachment.eml").read_bytes())
 
     assert parsed.body == "Please see the attached invoice or pay online ."
-    assert parsed.links == [Link(text="pay online", url="http://invoices-online.net/pay")]
+    assert parsed.links == [
+        Link(text="pay online", url="http://invoices-online.net/pay")
+    ]
 
 
 def test_no_attachments():
