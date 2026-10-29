@@ -4,7 +4,9 @@ from phishtrace.parser import parse_email
 from phishtrace.rules import (
     Finding,
     Severity,
+    check_attachment,
     check_brand_impersonation,
+    check_dangerous_attachments,
     check_link_mismatch,
     check_lookalike_domain,
     check_reply_to_mismatch,
@@ -319,3 +321,74 @@ def test_phrase_split_over_lines_is_found():
 
     detail = check_urgency_language(email)[0].detail
     assert detail == "pressure words found: within 48 hours"
+
+
+def _email_with_attachment(filename, content_type):
+    raw = (
+        'Content-Type: multipart/mixed; boundary="B"\n\n'
+        "--B\n"
+        f"Content-Type: {content_type}\n"
+        f'Content-Disposition: attachment; filename="{filename}"\n\n'
+        "data\n"
+        "--B--\n"
+    )
+    return parse_email(raw.encode())
+
+
+def test_double_extension_is_flagged():
+    email = parse_email((FIXTURES / "attachment.eml").read_bytes())
+
+    detail = "invoice.pdf.exe pretends to be a pdf but is really exe"
+    assert check_dangerous_attachments(email) == [
+        Finding("dangerous_attachment", Severity.HIGH, detail)
+    ]
+
+
+def test_program_is_high():
+    finding = check_attachment("setup.exe", "application/octet-stream")
+
+    assert finding.severity == Severity.HIGH
+
+
+def test_upper_case_extension_is_high():
+    finding = check_attachment("SETUP.EXE", "application/octet-stream")
+
+    assert finding.severity == Severity.HIGH
+
+
+def test_trailing_dot_is_still_high():
+    finding = check_attachment("invoice.exe.", "application/octet-stream")
+
+    assert finding.severity == Severity.HIGH
+
+
+def test_disk_image_is_medium():
+    finding = check_attachment("scan.iso", "application/octet-stream")
+
+    assert finding.severity == Severity.MEDIUM
+
+
+def test_type_mismatch_is_medium():
+    finding = check_attachment("report.pdf", "image/png")
+
+    assert finding.detail == "report.pdf is named pdf but claims to be image/png"
+
+
+def test_generic_type_is_fine():
+    assert check_attachment("report.pdf", "application/octet-stream") is None
+
+
+def test_normal_pdf_is_fine():
+    email = _email_with_attachment("report.pdf", "application/pdf")
+
+    assert check_dangerous_attachments(email) == []
+
+
+def test_no_extension_is_fine():
+    assert check_attachment("README", "text/plain") is None
+
+
+def test_no_attachments_is_fine():
+    email = _email_saying("Hi")
+
+    assert check_dangerous_attachments(email) == []

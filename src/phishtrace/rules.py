@@ -74,6 +74,28 @@ URGENCY_PATTERNS = [
     r"last warning",
 ]
 
+# windows runs these on double click
+EXECUTABLE_EXTENSIONS = {
+    "exe", "scr", "com", "bat", "cmd", "pif", "vbs", "vbe",
+    "js", "jse", "wsf", "hta", "ps1", "msi", "jar", "lnk",
+}  # fmt: skip
+
+# disk images get past mail filters and macros or offline login pages do the rest
+RISKY_EXTENSIONS = {"iso", "img", "vhd", "docm", "xlsm", "pptm", "html", "htm"}
+
+# own list because mimetypes reads the windows registry and differs per machine
+DOCUMENT_TYPES = {
+    "pdf": "application/pdf",
+    "doc": "application/msword",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xls": "application/vnd.ms-excel",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "txt": "text/plain",
+}
+
 
 class Severity(IntEnum):
     LOW = 1
@@ -202,6 +224,41 @@ def check_urgency_language(email: ParsedEmail) -> list[Finding]:
     return [Finding("urgency_language", severity, detail)]
 
 
+def check_dangerous_attachments(email: ParsedEmail) -> list[Finding]:
+    findings = []
+    for attachment in email.attachments:
+        finding = check_attachment(attachment.filename, attachment.content_type)
+        if finding:
+            findings.append(finding)
+    return findings
+
+
+def check_attachment(filename: str, content_type: str) -> Finding | None:
+    # windows drops trailing dots and spaces so invoice.exe. still runs as exe
+    parts = filename.lower().rstrip(". ").split(".")
+    if len(parts) < 2:
+        return None
+    ext = parts[-1]
+    before = parts[-2] if len(parts) > 2 else ""
+
+    # one finding per file so invoice.pdf.exe isnt counted twice
+    if ext in EXECUTABLE_EXTENSIONS and before in DOCUMENT_TYPES:
+        detail = f"{filename} pretends to be a {before} but is really {ext}"
+        return Finding("dangerous_attachment", Severity.HIGH, detail)
+    if ext in EXECUTABLE_EXTENSIONS:
+        detail = f"{filename} is a program that runs when opened"
+        return Finding("dangerous_attachment", Severity.HIGH, detail)
+    if ext in RISKY_EXTENSIONS:
+        detail = f"{filename} is a {ext} file which is often used for malware"
+        return Finding("dangerous_attachment", Severity.MEDIUM, detail)
+    # lots of normal mail clients send octet-stream for everything
+    expected = DOCUMENT_TYPES.get(ext)
+    if expected and content_type not in (expected, "application/octet-stream"):
+        detail = f"{filename} is named {ext} but claims to be {content_type}"
+        return Finding("dangerous_attachment", Severity.MEDIUM, detail)
+    return None
+
+
 def _is_ip(host: str) -> bool:
     # http://3232235777 is an ip written as one number and browsers still open it
     try:
@@ -265,6 +322,7 @@ RULES = [
     check_lookalike_domain,
     check_suspicious_urls,
     check_urgency_language,
+    check_dangerous_attachments,
 ]
 
 
