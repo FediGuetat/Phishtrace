@@ -59,6 +59,21 @@ SHORTENERS = {
     "tiny.cc",
 }
 
+URGENCY_PATTERNS = [
+    r"urgent",
+    r"immediately",
+    r"act now",
+    r"final notice",
+    r"action required",
+    r"account (is |has been )?(suspended|locked|disabled|closed)",
+    r"verify your (account|identity)",
+    r"confirm your (account|identity|password)",
+    r"within \d+ hours",
+    r"unusual (sign-in |login )?activity",
+    r"password (will )?expires?",
+    r"last warning",
+]
+
 
 class Severity(IntEnum):
     LOW = 1
@@ -169,6 +184,24 @@ def check_url(url: str) -> list[Finding]:
     return findings
 
 
+def check_urgency_language(email: ParsedEmail) -> list[Finding]:
+    # html to text can break a phrase over two lines
+    text = " ".join(f"{email.subject} {email.body}".split())
+
+    found = []
+    for pattern in URGENCY_PATTERNS:
+        match = re.search(rf"\b{pattern}\b", text, re.IGNORECASE)
+        if match:
+            found.append(match.group(0).lower())
+    if not found:
+        return []
+
+    # real banks say action required too so this alone never goes above medium
+    severity = Severity.MEDIUM if len(found) > 1 else Severity.LOW
+    detail = f"pressure words found: {', '.join(found)}"
+    return [Finding("urgency_language", severity, detail)]
+
+
 def _is_ip(host: str) -> bool:
     # http://3232235777 is an ip written as one number and browsers still open it
     try:
@@ -231,6 +264,7 @@ RULES = [
     check_brand_impersonation,
     check_lookalike_domain,
     check_suspicious_urls,
+    check_urgency_language,
 ]
 
 

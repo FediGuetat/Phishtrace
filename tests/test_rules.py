@@ -9,6 +9,7 @@ from phishtrace.rules import (
     check_lookalike_domain,
     check_reply_to_mismatch,
     check_suspicious_urls,
+    check_urgency_language,
     check_url,
     run_all_rules,
 )
@@ -260,3 +261,61 @@ def test_same_url_twice_is_reported_once():
     )
 
     assert len(check_suspicious_urls(parse_email(raw))) == 1
+
+
+def _email_saying(body, subject="Hello"):
+    return parse_email(f"Subject: {subject}\n\n{body}".encode())
+
+
+def test_calm_email_is_fine():
+    email = _email_saying("Here are the notes from our meeting")
+
+    assert check_urgency_language(email) == []
+
+
+def test_one_phrase_is_low():
+    email = _email_saying("Please reply immediately")
+
+    detail = "pressure words found: immediately"
+    assert check_urgency_language(email) == [
+        Finding("urgency_language", Severity.LOW, detail)
+    ]
+
+
+def test_two_phrases_are_medium():
+    email = _email_saying("Your account is suspended. Act now")
+
+    findings = check_urgency_language(email)
+    assert [f.severity for f in findings] == [Severity.MEDIUM]
+
+
+def test_same_phrase_twice_is_still_low():
+    email = _email_saying("Urgent. This is urgent")
+
+    findings = check_urgency_language(email)
+    assert [f.severity for f in findings] == [Severity.LOW]
+
+
+def test_phrase_in_subject_is_found():
+    email = _email_saying("Hi", subject="Final notice")
+
+    assert len(check_urgency_language(email)) == 1
+
+
+def test_upper_case_phrase_is_found():
+    email = _email_saying("VERIFY YOUR ACCOUNT")
+
+    assert len(check_urgency_language(email)) == 1
+
+
+def test_phrase_inside_other_word_is_ignored():
+    email = _email_saying("Feel free to contact now or later")
+
+    assert check_urgency_language(email) == []
+
+
+def test_phrase_split_over_lines_is_found():
+    email = _email_saying("Pay within 48\nhours")
+
+    detail = check_urgency_language(email)[0].detail
+    assert detail == "pressure words found: within 48 hours"
